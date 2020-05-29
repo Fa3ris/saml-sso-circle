@@ -11,17 +11,21 @@ import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.Arrays;
+import java.util.List;
 
+import org.opensaml.saml.saml2.core.Statement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.security.config.annotation.ObjectPostProcessor;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
 import org.springframework.security.saml2.credentials.Saml2X509Credential;
 import org.springframework.security.saml2.credentials.Saml2X509Credential.Saml2X509CredentialType;
+import org.springframework.security.saml2.provider.service.authentication.OpenSamlAuthenticationProvider;
 import org.springframework.security.saml2.provider.service.registration.InMemoryRelyingPartyRegistrationRepository;
 import org.springframework.security.saml2.provider.service.registration.RelyingPartyRegistration;
 import org.springframework.security.saml2.provider.service.registration.RelyingPartyRegistrationRepository;
@@ -36,12 +40,63 @@ public class SecurityConfigurer extends WebSecurityConfigurerAdapter {
 	@Override
 	protected void configure(HttpSecurity http) throws Exception {
 
+		ObjectPostProcessor<OpenSamlAuthenticationProvider> processor = new ObjectPostProcessor<OpenSamlAuthenticationProvider>() {
+            @Override
+            public <O extends OpenSamlAuthenticationProvider> O postProcess(O provider) {
+                //provider.setResponseTimeValidationSkew(RESPONSE_TIME_VALIDATION_SKEW);
+                //provider.setAuthoritiesMapper(AUTHORITIES_MAPPER);
+            	/*
+                provider.setAuthoritiesMapper(new GrantedAuthoritiesMapper() {
+
+					@Override
+					public Collection<? extends GrantedAuthority> mapAuthorities(
+							Collection<? extends GrantedAuthority> authorities) {
+						logger.info("{}", authorities);
+						return null;
+					}
+                	
+                });
+                */
+                //provider.setAuthoritiesExtractor(AUTHORITIES_EXTRACTOR);
+                /*provider.setAuthoritiesExtractor(new Converter<Assertion, Collection<? extends GrantedAuthority>() {
+
+					@Override
+					public Collection<? extends GrantedAuthority> convert(Assertion source) {
+						// TODO Auto-generated method stub
+						return null;
+					}
+
+				
+                	
+                });
+                */
+                provider.setAuthoritiesExtractor(assertion -> { 
+                	List<Statement> stmts = assertion.getStatements();
+                	for(Statement s : stmts) {
+                		logger.info(s.toString());
+                	}
+                	logger.info("{}", assertion);
+                	return null;});
+                return provider;
+            }
+		
+        };
+
+		// AuthenticationManager authenticationManager;
 		http
 		.authorizeRequests()
 		.anyRequest()
 		.authenticated()
 		.and()
-		.saml2Login();
+		.saml2Login(saml2 ->
+			saml2.addObjectPostProcessor(processor)
+			)
+		//.and()
+		.logout()
+		//.logoutUrl("/custom-logout")
+		.logoutSuccessUrl("/logout-success")
+		.permitAll()
+		;
 
 	}
 
@@ -77,6 +132,7 @@ public class SecurityConfigurer extends WebSecurityConfigurerAdapter {
 		// local registration ID
 		String registrationId = "artik-saml-service-provider-example";
 		
+		String assertionConsumerServiceUrlTemplate = "{baseUrl}/login/saml2/sso/{registrationId}";
 		/* 
 		 * local signing (and decryption key)
 		 * Contient le certificat et la clé privée du SP
@@ -91,7 +147,6 @@ public class SecurityConfigurer extends WebSecurityConfigurerAdapter {
 		 */
 		Saml2X509Credential idpVerificationCertificate = getIdpVerificationCertificate();
 		
-		String assertionConsumerServiceUrlTemplate = "{baseUrl}/login/saml2/sso/{registrationId}";
 
 		return RelyingPartyRegistration
 				.withRegistrationId(registrationId)
